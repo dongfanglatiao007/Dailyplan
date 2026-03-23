@@ -8,6 +8,7 @@ import {
   FileText,
   Check,
   ChevronDown,
+  Users,
 } from "lucide-react";
 import { useState, useRef, Fragment, useEffect, useCallback } from "react";
 
@@ -20,7 +21,7 @@ interface Activity {
   equipmentNo?: string;
   team?: string;
   shift?: string;
-  requirement?: string;
+  requirement?: string[];
   remarks?: string;
 }
 
@@ -48,8 +49,8 @@ const scheduleData: ScheduleEntry[] = [
     trainPath: ["31"],
     pmPeak: "Y",
     activities: [
-      { id: genActId(), activityType: "T1", team: "MB", shift: "Day", requirement: "HMT", remarks: "備註1" },
-      { id: genActId(), activityType: "Axle NDT", carriageNo: "V101", equipmentNo: "A123456", team: "MA", shift: "Night", requirement: "RMT", remarks: "備註2" },
+      { id: genActId(), activityType: "T1", team: "MB", shift: "Day", requirement: ["HMT"], remarks: "備註1" },
+      { id: genActId(), activityType: "Axle NDT", carriageNo: "V101", equipmentNo: "A123456", team: "MA", shift: "Night", requirement: ["RMT"], remarks: "備註2" },
     ],
   },
   {
@@ -58,7 +59,7 @@ const scheduleData: ScheduleEntry[] = [
     timeRange: "",
     trainPath: [],
     activities: [
-      { id: genActId(), activityType: "Depot", team: "MB", shift: "Day", requirement: "HMT" },
+      { id: genActId(), activityType: "Depot" },
     ],
   },
   {
@@ -68,8 +69,8 @@ const scheduleData: ScheduleEntry[] = [
     trainPath: ["30"],
     pmPeak: "N",
     activities: [
-      { id: genActId(), activityType: "設備修", carriageNo: "X610", equipmentNo: "A001", team: "MA", shift: "Early", requirement: "RMT" },
-      { id: genActId(), activityType: "設備修", carriageNo: "W710", equipmentNo: "A002", team: "HM", shift: "Early", requirement: "RMT" },
+      { id: genActId(), activityType: "設備修", carriageNo: "X610", equipmentNo: "A001", team: "MA", shift: "Early", requirement: ["RMT"] },
+      { id: genActId(), activityType: "設備修", carriageNo: "W710", equipmentNo: "A002", team: "HM", shift: "Early", requirement: ["RMT"] },
     ],
   },
   {
@@ -78,7 +79,7 @@ const scheduleData: ScheduleEntry[] = [
     timeRange: "09:00-14:00",
     trainPath: ["31"],
     activities: [
-      { id: genActId(), activityType: "Spare", team: "MC", shift: "Night", requirement: "PCT" },
+      { id: genActId(), activityType: "Spare" },
     ],
   },
   {
@@ -88,8 +89,8 @@ const scheduleData: ScheduleEntry[] = [
     trainPath: ["3"],
     pmPeak: "Y",
     activities: [
-      { id: genActId(), activityType: "Depot", team: "HM", shift: "Day", requirement: "HCT" },
-      { id: genActId(), activityType: "設備修", carriageNo: "H101", equipmentNo: "C001", team: "SC", shift: "Day", requirement: "HMT", remarks: "輪對檢測" },
+      { id: genActId(), activityType: "Depot" },
+      { id: genActId(), activityType: "設備修", carriageNo: "H101", equipmentNo: "C001", team: "SC", shift: "Day", requirement: ["HMT"], remarks: "輪對檢測" },
     ],
   },
 ];
@@ -104,6 +105,8 @@ const ACTIVITY_TYPES = [
   { value: "Axle NDT", label: "Axle NDT" },
   { value: "常規檢修", label: "常規檢修" },
   { value: "臨時維護", label: "臨時維護" },
+  { value: "Save mileage", label: "Save mileage" },
+  { value: "Stop", label: "Stop" },
 ];
 
 const REQUIREMENTS = [
@@ -238,6 +241,7 @@ function FilterableSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -259,6 +263,19 @@ function FilterableSelect({
       item?.scrollIntoView({ block: "nearest" });
     }
   }, [highlightIdx, open]);
+
+  // Check space and determine drop direction
+  useEffect(() => {
+    if (open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const dropdownHeight = 250; // Approximate height of dropdown
+      
+      // If not enough space below but more space above, drop up
+      setDropUp(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
+    }
+  }, [open]);
 
   // close on outside click
   useEffect(() => {
@@ -322,7 +339,15 @@ function FilterableSelect({
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-50 mt-1 left-0 min-w-[160px] bg-white rounded-lg border border-[#e2e8f0] shadow-lg overflow-hidden">
+        <div 
+          className={`fixed z-[100] min-w-[160px] bg-white rounded-lg border border-[#e2e8f0] shadow-lg overflow-hidden`}
+          style={{
+            left: containerRef.current ? `${containerRef.current.getBoundingClientRect().left}px` : 0,
+            top: dropUp 
+              ? containerRef.current ? `${containerRef.current.getBoundingClientRect().top - 250}px` : 0
+              : containerRef.current ? `${containerRef.current.getBoundingClientRect().bottom + 4}px` : 0,
+          }}
+        >
           {/* Search input */}
           <div className="p-1.5 border-b border-[#f1f5f9]">
             <input
@@ -369,11 +394,191 @@ function FilterableSelect({
   );
 }
 
+// ─── Multi-Select Component ─────────────────────────────────────────────────
+
+function MultiSelect({
+  values,
+  options,
+  onChange,
+  placeholder,
+}: {
+  values: string[];
+  options: { value: string; label: string }[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const [dropUp, setDropUp] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const displayLabels = values.map((v) => options.find((o) => o.value === v)?.label || "").join(", ");
+
+  const filtered = search
+    ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  useEffect(() => {
+    setHighlightIdx(0);
+  }, [search, open]);
+
+  // scroll highlighted item into view
+  useEffect(() => {
+    if (open && listRef.current) {
+      const item = listRef.current.children[highlightIdx] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightIdx, open]);
+
+  // Check space and determine drop direction
+  useEffect(() => {
+    if (open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const dropdownHeight = 250; // Approximate height of dropdown
+      
+      // If not enough space below but more space above, drop up
+      setDropUp(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
+    }
+  }, [open]);
+
+  // close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleOpen = () => {
+    setOpen(true);
+    setSearch("");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const handleSelect = (v: string) => {
+    const newValues = values.includes(v) ? values.filter((val) => val !== v) : [...values, v];
+    onChange(newValues);
+    // Keep dropdown open for multiple selections
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx((prev) => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered[highlightIdx]) {
+        handleSelect(filtered[highlightIdx].value);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+      setSearch("");
+    }
+  };
+
+  const fontStyle = { fontFamily: "JetBrains Mono, monospace" };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center gap-1 px-2 py-1 bg-transparent border border-transparent rounded text-xs text-[#1e293b] hover:border-[#d1d5db] hover:bg-[#f9fafb] transition-colors cursor-pointer w-full text-left"
+      >
+        <span className={`flex-1 truncate ${!values.length ? "text-[#94a3b8]" : ""}`}>
+          {displayLabels || placeholder || "—"}
+        </span>
+        <ChevronDown className="w-3 h-3 text-[#94a3b8] flex-shrink-0" />
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div 
+          className={`fixed z-[100] min-w-[160px] bg-white rounded-lg border border-[#e2e8f0] shadow-lg overflow-hidden`}
+          style={{
+            left: containerRef.current ? `${containerRef.current.getBoundingClientRect().left}px` : 0,
+            top: dropUp 
+              ? containerRef.current ? `${containerRef.current.getBoundingClientRect().top - 250}px` : 0
+              : containerRef.current ? `${containerRef.current.getBoundingClientRect().bottom + 4}px` : 0,
+          }}
+        >
+          {/* Search input */}
+          <div className="p-1.5 border-b border-[#f1f5f9]">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="輸入篩選..."
+              className="w-full px-2 py-1.5 bg-[#f8fafc] border border-[#e2e8f0] rounded-md text-xs text-[#1e293b] placeholder:text-[#94a3b8] focus:outline-none focus:border-[#3b82f6]/50 focus:bg-white"
+            />
+          </div>
+
+          {/* Options list */}
+          <div ref={listRef} className="max-h-[200px] overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-[#94a3b8] text-center">無匹配項</div>
+            ) : (
+              filtered.map((o, idx) => {
+                const isSelected = values.includes(o.value);
+                return (
+                  <div
+                    key={o.value}
+                    onClick={() => handleSelect(o.value)}
+                    className={`flex items-center px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                      idx === highlightIdx ? "bg-[#eff6ff] text-[#2563eb]" : "text-[#1e293b] hover:bg-[#f8fafc]"
+                    }`}
+                  >
+                    <div
+                      className={`w-3.5 h-3.5 rounded border mr-2 flex items-center justify-center ${
+                        isSelected ? "bg-[#3b82f6] border-[#3b82f6]" : "border-[#cbd5e1]"
+                      }`}
+                    >
+                      {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                    </div>
+                    {o.label}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function TrainScheduleTable() {
   const [entries, setEntries] = useState<ScheduleEntry[]>(sortEntries(scheduleData));
   const [addingTrainId, setAddingTrainId] = useState<number | null>(null);
+  const [showStaffSchedule, setShowStaffSchedule] = useState(false);
+  const [teamShiftMap, setTeamShiftMap] = useState<Record<string, string>>({
+    MA: "Early",
+    MB: "Day",
+    HM: "Early",
+    MC: "Night",
+    SC: "Day",
+    "Support A": "Day",
+    "Support B": "Night",
+    "Support C": "Early",
+  });
   const tableRef = useRef<HTMLDivElement>(null);
 
   // ── Entry-level updates ──
@@ -414,7 +619,7 @@ export function TrainScheduleTable() {
       trainNo: "",
       timeRange: "",
       trainPath: [],
-      activities: [{ id: genActId(), activityType: "", team: "", shift: "", requirement: "" }],
+      activities: [{ id: genActId(), activityType: "", team: "", shift: "", requirement: [] }],
     };
     setEntries((prev) => [...prev, newEntry]);
   };
@@ -429,12 +634,36 @@ export function TrainScheduleTable() {
           activities: e.activities.map((a) => {
             if (a.id !== actId) return a;
             const updated = { ...a, [field]: value || undefined };
+            
             // Clear carriage/equipment if not 設備修
             if (field === "activityType" && value !== "設備修") {
               updated.carriageNo = undefined;
               updated.equipmentNo = undefined;
             }
+            
+            // Clear team/shift/requirement for specific activity types
+            if (field === "activityType" && ["Depot", "Spare", "Save mileage", "Stop"].includes(value)) {
+              updated.team = undefined;
+              updated.shift = undefined;
+              updated.requirement = undefined;
+            }
+            
             return updated;
+          }),
+        };
+      })
+    );
+  };
+
+  const updateActivityArray = (entryId: number, actId: string, field: keyof Activity, value: string[]) => {
+    setEntries((prev) =>
+      prev.map((e) => {
+        if (e.id !== entryId) return e;
+        return {
+          ...e,
+          activities: e.activities.map((a) => {
+            if (a.id !== actId) return a;
+            return { ...a, [field]: value.length > 0 ? value : undefined };
           }),
         };
       })
@@ -459,7 +688,7 @@ export function TrainScheduleTable() {
           ...e,
           activities: [
             ...e.activities,
-            { id: genActId(), activityType: "", team: "", shift: "", requirement: "" },
+            { id: genActId(), activityType: "", team: "", shift: "", requirement: [] },
           ],
         };
       })
@@ -493,6 +722,13 @@ export function TrainScheduleTable() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowStaffSchedule(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#e2e8f0] rounded-lg text-[#64748b] text-xs hover:bg-[#f1f5f9] transition-colors shadow-sm"
+            >
+              <Users className="w-3.5 h-3.5" />
+              人員排班表
+            </button>
             <button className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#e2e8f0] rounded-lg text-[#64748b] text-xs hover:bg-[#f1f5f9] transition-colors shadow-sm">
               <Download className="w-3.5 h-3.5" />
               導出
@@ -509,7 +745,7 @@ export function TrainScheduleTable() {
         </div>
 
         {/* ─── Table ─── */}
-        <div ref={tableRef} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div ref={tableRef} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
@@ -664,23 +900,20 @@ export function TrainScheduleTable() {
 
                             {/* 作業班組 */}
                             <td className={cellBase}>
-                              {act.team ? (
-                                <span
-                                  className="inline-flex items-center text-[11px] text-white px-2 py-0.5 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
-                                  style={{ backgroundColor: getTechColorByName(act.team) }}
-                                  onClick={() => {
-                                    const idx = TEAM_OPTIONS.indexOf(act.team!);
-                                    const next = TEAM_OPTIONS[(idx + 1) % TEAM_OPTIONS.length];
-                                    updateActivity(entry.id, act.id, "team", next);
-                                  }}
-                                >
-                                  {act.team}
-                                </span>
+                              {["Depot", "Spare", "Save mileage", "Stop"].includes(act.activityType || "") ? (
+                                <span className="text-[#cbd5e1] px-2">—</span>
                               ) : (
-                                <InlineSelect
-                                  value=""
+                                <FilterableSelect
+                                  value={act.team || ""}
                                   options={TEAM_OPTIONS.map((t) => ({ value: t, label: t }))}
-                                  onChange={(v) => updateActivity(entry.id, act.id, "team", v)}
+                                  onChange={(v) => {
+                                    updateActivity(entry.id, act.id, "team", v);
+                                    // Auto-fill shift from teamShiftMap
+                                    const autoShift = teamShiftMap[v];
+                                    if (autoShift) {
+                                      updateActivity(entry.id, act.id, "shift", autoShift);
+                                    }
+                                  }}
                                   placeholder="選擇"
                                 />
                               )}
@@ -688,20 +921,11 @@ export function TrainScheduleTable() {
 
                             {/* 班次 */}
                             <td className={cellBase}>
-                              {act.shift ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded-md text-[11px] cursor-pointer hover:opacity-80 transition-opacity ${getShiftStyle(act.shift)}`}
-                                  onClick={() => {
-                                    const idx = SHIFT_OPTIONS.indexOf(act.shift!);
-                                    const next = SHIFT_OPTIONS[(idx + 1) % SHIFT_OPTIONS.length];
-                                    updateActivity(entry.id, act.id, "shift", next);
-                                  }}
-                                >
-                                  {act.shift}
-                                </span>
+                              {["Depot", "Spare", "Save mileage", "Stop"].includes(act.activityType || "") ? (
+                                <span className="text-[#cbd5e1] px-2">—</span>
                               ) : (
-                                <InlineSelect
-                                  value=""
+                                <FilterableSelect
+                                  value={act.shift || ""}
                                   options={SHIFT_OPTIONS.map((s) => ({ value: s, label: s }))}
                                   onChange={(v) => updateActivity(entry.id, act.id, "shift", v)}
                                   placeholder="選擇"
@@ -711,22 +935,13 @@ export function TrainScheduleTable() {
 
                             {/* 作業需求 */}
                             <td className={cellBase}>
-                              {act.requirement ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded-md text-[11px] cursor-pointer hover:opacity-80 transition-opacity ${getReqStyle(act.requirement)}`}
-                                  onClick={() => {
-                                    const idx = REQUIREMENTS.findIndex((r) => r.value === act.requirement);
-                                    const next = REQUIREMENTS[(idx + 1) % REQUIREMENTS.length];
-                                    updateActivity(entry.id, act.id, "requirement", next.value);
-                                  }}
-                                >
-                                  {act.requirement}
-                                </span>
+                              {["Depot", "Spare", "Save mileage", "Stop"].includes(act.activityType || "") ? (
+                                <span className="text-[#cbd5e1] px-2">—</span>
                               ) : (
-                                <InlineSelect
-                                  value=""
+                                <MultiSelect
+                                  values={act.requirement || []}
                                   options={REQUIREMENTS}
-                                  onChange={(v) => updateActivity(entry.id, act.id, "requirement", v)}
+                                  onChange={(v) => updateActivityArray(entry.id, act.id, "requirement", v)}
                                   placeholder="選擇"
                                 />
                               )}
@@ -784,6 +999,85 @@ export function TrainScheduleTable() {
           </div>
         </div>
       </div>
+
+      {/* ─── Staff Schedule Modal ─── */}
+      {showStaffSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0]">
+              <div className="flex items-center gap-2.5">
+                <Users className="w-5 h-5 text-[#3b82f6]" />
+                <h2 className="text-base font-semibold text-[#1e293b]">人員排班表</h2>
+              </div>
+              <button
+                onClick={() => setShowStaffSchedule(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#f1f5f9] transition-colors"
+              >
+                <X className="w-4 h-4 text-[#64748b]" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <p className="text-xs text-[#64748b] mb-4">
+                配置各班組的默認班次，選擇班組後將自動填充對應的班次。
+              </p>
+              <div className="space-y-3">
+                {TEAM_OPTIONS.map((team) => (
+                  <div
+                    key={team}
+                    className="flex items-center justify-between p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] hover:border-[#cbd5e1] transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="inline-flex items-center justify-center w-16 text-[11px] text-white px-3 py-1 rounded-full"
+                        style={{ backgroundColor: getTechColorByName(team) }}
+                      >
+                        {team}
+                      </span>
+                      <span className="text-xs text-[#64748b]">默認班次</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {SHIFT_OPTIONS.map((shift) => (
+                        <button
+                          key={shift}
+                          onClick={() =>
+                            setTeamShiftMap((prev) => ({ ...prev, [team]: shift }))
+                          }
+                          className={`px-3 py-1.5 rounded-md text-[11px] transition-all ${
+                            teamShiftMap[team] === shift
+                              ? getShiftStyle(shift)
+                              : "bg-white border border-[#e2e8f0] text-[#94a3b8] hover:border-[#cbd5e1]"
+                          }`}
+                        >
+                          {shift}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-[#e2e8f0] bg-[#f8fafc]">
+              <button
+                onClick={() => setShowStaffSchedule(false)}
+                className="px-4 py-2 rounded-lg text-xs text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => setShowStaffSchedule(false)}
+                className="px-4 py-2 rounded-lg text-xs bg-[#3b82f6] text-white hover:bg-[#2563eb] transition-colors"
+              >
+                確認
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
